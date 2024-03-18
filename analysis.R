@@ -9,8 +9,9 @@ install.packages(c("glmnet"))
 install.packages(c("readxl"))
 install.packages(c("dplyr"))
 install.packages("pROC")
+install.packages("ppcor")
 
-
+library(ppcor)
 library(glm)
 library(pROC)
 library(ggplot2)
@@ -139,11 +140,37 @@ print(result_dataframe)
 
 
 # MultiLogistic Binary Domain Fall Prediction
+
 nAOmitted_domainAdapted_baseline_NPH_CATEGORICAL_WITH_FALLS[, -c(1,2,3,4,5)]
 Fall_Logistic_binary_Domain_model <- glm(Falls..Y.N. ~ ., data = nAOmitted_domainAdapted_baseline_NPH_CATEGORICAL_WITH_FALLS[, -c(1,2,3,4,5)], family = binomial)
 summary(Fall_Logistic_binary_Domain_model)
 
 # Single Logistic binary regression predicting fall using domains
+
+# MultiLogistic Binary Domain Fall Prediction Adjusted
+
+adjustment_df = baseline_NPH_df[-1, c(5,10,11,12)]
+adjustment_df$BMI[adjustment_df$BMI == 997] = NA
+adjustment_df$`Race (1=white, 2=black, 3= asian, 4=other)`[adjustment_df$`Race (1=white, 2=black, 3= asian, 4=other)` == 998] = NA
+adjustment_df$Sex <- ifelse(adjustment_df$Sex == "Male", 0, 1)
+baseline_NPH_df_test_Ev_CATEGORICAL_WITH_FALLS_adjusted = cbind(baseline_NPH_df_test_Ev_CATEGORICAL_WITH_FALLS, adjustment_df)
+nAOmitted_domainAdapted_baseline_NPH_CATEGORICAL_WITH_FALLS_adjusted = na.omit(baseline_NPH_df_test_Ev_CATEGORICAL_WITH_FALLS_adjusted)
+nAOmitted_domainAdapted_baseline_NPH_CATEGORICAL_WITH_FALLS_adjusted = cbind(nAOmitted_domainAdapted_baseline_NPH_CATEGORICAL_WITH_FALLS_adjusted, speed_Domain = (nAOmitted_domainAdapted_baseline_NPH_CATEGORICAL_WITH_FALLS_adjusted$TUG >0 | nAOmitted_domainAdapted_baseline_NPH_CATEGORICAL_WITH_FALLS_adjusted$X10MW > 0))
+nAOmitted_domainAdapted_baseline_NPH_CATEGORICAL_WITH_FALLS_adjusted = cbind(nAOmitted_domainAdapted_baseline_NPH_CATEGORICAL_WITH_FALLS_adjusted, balance_Domain = (nAOmitted_domainAdapted_baseline_NPH_CATEGORICAL_WITH_FALLS_adjusted$X4SBT >0 | nAOmitted_domainAdapted_baseline_NPH_CATEGORICAL_WITH_FALLS_adjusted$'X30.STS' > 0))
+nAOmitted_domainAdapted_baseline_NPH_CATEGORICAL_WITH_FALLS_adjusted = cbind(nAOmitted_domainAdapted_baseline_NPH_CATEGORICAL_WITH_FALLS_adjusted, endurance_Domain = (nAOmitted_domainAdapted_baseline_NPH_CATEGORICAL_WITH_FALLS_adjusted$X2MW >0))
+nAOmitted_domainAdapted_baseline_NPH_CATEGORICAL_WITH_FALLS_adjusted = data.frame(lapply(nAOmitted_domainAdapted_baseline_NPH_CATEGORICAL_WITH_FALLS_adjusted, as.numeric))
+
+Fall_Logistic_binary_Domain_model_Adjusted <- glm(Falls..Y.N. ~ ., data = nAOmitted_domainAdapted_baseline_NPH_CATEGORICAL_WITH_FALLS_adjusted[, -c(1,2,3,4,5)], family = binomial)
+summary(Fall_Logistic_binary_Domain_model_Adjusted)
+
+# Single Logistic binary regression predicting fall using domains
+nAOmitted_domainAdapted_baseline_NPH_CATEGORICAL_WITH_FALLS_adjusted[, -c(1,2,3,4,5)]
+domains = c('speed_Domain', 'endurance_Domain', 'balance_Domain')
+for (col in domains) {
+  
+  model <- glm(Falls..Y.N. ~ ., data = cbind(nAOmitted_domainAdapted_baseline_NPH_CATEGORICAL_WITH_FALLS_adjusted[, -c(1,2,3,4,5,11,12,13)], nAOmitted_domainAdapted_baseline_NPH_CATEGORICAL_WITH_FALLS_adjusted[col]), family = binomial)
+  print(summary(model))
+}
 
 # Initialize an empty dataframe to store results
 results_df_single_Fall_Logistic_binary_Domain_model <- data.frame(variable = character(), coefficient = numeric(), p_value = numeric(), stringsAsFactors = FALSE)
@@ -211,13 +238,16 @@ print(chisq_result4)
 baseline_raw_data_corr = data.frame(baseline_NPH_df[, 34:41])
 colnames(baseline_raw_data_corr) = baseline_raw_data_corr[1,]
 baseline_raw_data_corr = data.frame(lapply(baseline_raw_data_corr[-c(1),], as.numeric))
+baseline_raw_data_corr$Sex = baseline_NPH_df[-1,'Sex']
+baseline_raw_data_corr$Sex <- ifelse(baseline_raw_data_corr$Sex == "Male", 0, 1)
+baseline_raw_data_corr = cbind(baseline_raw_data_corr,data.frame(lapply( baseline_NPH_df[-1, c(10,12, 16,19,20,26,31)], as.numeric)))
 baseline_raw_data_corr = data.frame(cbind(baseline_raw_data_corr, fall = data.frame(baseline_NPH_df[-1, 17])))
 baseline_raw_data_corr$'Number.of.falls'[baseline_raw_data_corr$'Number.of.falls' == '999'] = NA
 baseline_raw_data_corr$'Number.of.falls' = t(data.frame(lapply(baseline_raw_data_corr$'Number.of.falls', as.numeric)))
 baseline_raw_data_corr = na.omit(baseline_raw_data_corr)
 baseline_raw_data_corr = baseline_raw_data_corr[, -c(3,4,5, 6)]
 
-correlation_results <- rcorr(as.matrix(baseline_raw_data_corr), type = "pearson")
+correlation_results <- rcorr(as.matrix(baseline_raw_data_corr[, -5]), type = "pearson")
 correlation_matrix <- correlation_results$r
 p_values_matrix <- correlation_results$P
 correlation_matrix <- cor(baseline_raw_data_corr,  use = "complete.obs")
@@ -253,22 +283,76 @@ plot( baseline_raw_data_corr$'Number.of.falls', baseline_raw_data_corr$X30.STS,m
 abline(lm(baseline_raw_data_corr$X30.STS ~ baseline_raw_data_corr$'Number.of.falls'), col = "red", )
 legend("topright", legend = paste("Correlation =", round(correlation_coefficient, 2)), col = "red", lty = 1)
 
+correlation_coefficient <- cor(baseline_raw_data_corr$FAQ, baseline_raw_data_corr$'Number.of.falls',  use = "complete.obs")
+cor.test(baseline_raw_data_corr$FAQ, baseline_raw_data_corr$'Number.of.falls')
+plot( baseline_raw_data_corr$'Number.of.falls', baseline_raw_data_corr$FAQ,main = "Scatter Plot with Correlation Line", 
+      xlab = "Falls", ylab = "FAQ", pch = 16, col = "blue")
+abline(lm(baseline_raw_data_corr$FAQ ~ baseline_raw_data_corr$'Number.of.falls'), col = "red", )
+legend("topright", legend = paste("Correlation =", round(correlation_coefficient, 2)), col = "red", lty = 1)
+
+correlation_coefficient <- cor(baseline_raw_data_corr$FRQ, baseline_raw_data_corr$'Number.of.falls',  use = "complete.obs")
+cor.test(baseline_raw_data_corr$FRQ, baseline_raw_data_corr$'Number.of.falls')
+plot( baseline_raw_data_corr$'Number.of.falls', baseline_raw_data_corr$FRQ, main = "Scatter Plot with Correlation Line", 
+      xlab = "Falls", ylab = "FRQ", pch = 16, col = "blue")
+abline(lm(baseline_raw_data_corr$FRQ ~ baseline_raw_data_corr$'Number.of.falls'), col = "red", )
+legend("topright", legend = paste("Correlation =", round(correlation_coefficient, 2)), col = "red", lty = 1)
+
+correlation_coefficient <- cor(baseline_raw_data_corr$FAQ, baseline_raw_data_corr$TUG,  use = "complete.obs")
+cor.test(baseline_raw_data_corr$FAQ, baseline_raw_data_corr$TUG)
+plot( baseline_raw_data_corr$TUG, baseline_raw_data_corr$FAQ,main = "Scatter Plot with Correlation Line", 
+      xlab = "TUG", ylab = "FAQ", pch = 16, col = "blue")
+abline(lm(baseline_raw_data_corr$FAQ ~ baseline_raw_data_corr$TUG), col = "red", )
+legend("topright", legend = paste("Correlation =", round(correlation_coefficient, 2)), col = "red", lty = 1)
+
+## Falls Association with gait tests adjusted
+
+model <- lm(Number.of.falls ~ TUG + Age.at.Baseline + BMI + Sex , data = baseline_raw_data_corr)
+summary(model)
+model <- lm(Number.of.falls ~ X10MW..s. + Age.at.Baseline + BMI + Sex , data = baseline_raw_data_corr)
+summary(model)
+model <- lm(Number.of.falls ~ X30.STS + Age.at.Baseline + BMI + Sex , data = baseline_raw_data_corr)
+summary(model)
+model <- lm(Number.of.falls ~ X2MW + Age.at.Baseline + BMI + Sex , data = baseline_raw_data_corr)
+summary(model)
+
+
+
+## Adjusted correlation test vs number of falls  XXXXXXXXXXXXXXXXXXXXX
+baseline_raw_data_corr = data.frame(baseline_NPH_df[, 34:41])
+colnames(baseline_raw_data_corr) = baseline_raw_data_corr[1,]
+baseline_raw_data_corr = data.frame(lapply(baseline_raw_data_corr[-c(1),], as.numeric))
+baseline_raw_data_corr = data.frame(cbind(baseline_raw_data_corr, fall = data.frame(baseline_NPH_df[-1, 17])))
+baseline_raw_data_corr$'Number.of.falls'[baseline_raw_data_corr$'Number.of.falls' == '999'] = NA
+baseline_raw_data_corr$'Number.of.falls' = t(data.frame(lapply(baseline_raw_data_corr$'Number.of.falls', as.numeric)))
+baseline_raw_data_corr_adjusted = cbind(baseline_raw_data_corr, adjustment_df)
+baseline_raw_data_corr_adjusted = na.omit(baseline_raw_data_corr_adjusted)
+baseline_raw_data_corr_adjusted = baseline_raw_data_corr_adjusted[, -c(3,4,5, 6)]
+baseline_raw_data_corr_adjusted$`Age at Baseline`
+pcor_result <- pcor(baseline_raw_data_corr_adjusted)
+
+# Print the partial correlation matrix
+print(pcor_result$estimate)
+
+# Visualize the results (e.g., heat map)
+heatmap(pcor_result$estimate)
+
+
 ## Logistic Regression Models Predicting Fall
-
-baseline_raw_regression_df = data.frame(lapply(na.omit(baseline_raw_data), as.numeric))
-baseline_raw_regression_df <- baseline_raw_regression_df %>%
+baseline_raw_data_adjusted_regression = cbind(baseline_raw_data,adjustment_df)
+baseline_raw_data_adjusted_regression = data.frame(lapply(na.omit(baseline_raw_data_adjusted_regression), as.numeric))
+baseline_raw_data_adjusted_regression <- baseline_raw_data_adjusted_regression %>%
   mutate_at(vars(3:6), ~ ifelse(. < 10, 0, .))
-baseline_raw_regression_df <- baseline_raw_regression_df %>%
+baseline_raw_data_adjusted_regression <- baseline_raw_data_adjusted_regression %>%
   mutate_at(vars(3:6), ~ ifelse(. == 999, 0, .))
-baseline_raw_regression_df <- baseline_raw_regression_df %>%
+baseline_raw_data_adjusted_regression <- baseline_raw_data_adjusted_regression %>%
   mutate_at(vars(3:6), ~ ifelse(. == 10, 1, .))
-Normalized_baseline_raw_regression_df= data.frame(scale(baseline_raw_regression_df[,-9]))
-baseline_raw_regression_df[, 1:8] = Normalized_baseline_raw_regression_df
-# Multivariate Logistic Regression Model No Lasso
+Normalized_baseline_raw_data_adjusted_regression= data.frame(scale(baseline_raw_data_adjusted_regression[,-9]))
+baseline_raw_data_adjusted_regression[, -9] = Normalized_baseline_raw_data_adjusted_regression
+# Multivariate Logistic Regression Model No Lasso adjusted
 
-logit_model <- glm(Falls..Y.N. ~., data = baseline_raw_regression_df, family = binomial)
-predicted_probs <- predict(logit_model, newdata = baseline_raw_regression_df, type = "response")
-roc_curve <- roc(baseline_raw_regression_df$Falls..Y.N., predicted_probs)
+logit_model <- glm(Falls..Y.N. ~., data = baseline_raw_data_adjusted_regression, family = binomial)
+predicted_probs <- predict(logit_model, newdata = baseline_raw_data_adjusted_regression, type = "response")
+roc_curve <- roc(baseline_raw_data_adjusted_regression$Falls..Y.N., predicted_probs)
 plot(roc_curve, main = "ROC Curve", col = "blue", lwd = 2)
 auc_value <- auc(roc_curve)
 text(0.8, 0.2, paste("AUC =", round(auc_value, 2)), col = "black", cex = 1.5)
@@ -289,28 +373,27 @@ summary(logit_model)
 # Single Variate Logistic Regression Model Predicting Fall
 
 singleFall_results_list <- list()
-for (col_name in colnames(baseline_raw_regression_df)[-which(colnames(baseline_raw_regression_df) == "Falls..Y.N.")]) {
-  formula <- as.formula(paste("Falls..Y.N. ~", col_name))
-  singleFall_model <- glm(formula, data = baseline_raw_regression_df, family = binomial)
+for (col_name in colnames(baseline_raw_data_adjusted_regression)[-which(colnames(baseline_raw_data_adjusted_regression) == "Falls..Y.N.")]) {
+  formula <- as.formula(paste("Falls..Y.N. ~ ."))
+  singleFall_model <- glm(formula, data = baseline_raw_data_adjusted_regression[, c('Falls..Y.N.', col_name, colnames(baseline_raw_data_adjusted_regression)[10:13])], family = binomial)
   singleFall_results <- summary(singleFall_model)$coefficients
   singleFall_results_list[[col_name]] <- singleFall_results
-  print(singleFall_results_list)
 }
 singleFall_results_df <- do.call(rbind, singleFall_results_list)
 singleFall_results_df
 
 #LASSO Regression Feature Selection
 
-baseline_raw_regression_df$Falls..Y.N. <- as.numeric(baseline_raw_regression_df$Falls..Y.N.)
-X <- as.matrix(baseline_raw_regression_df[, -which(names(baseline_raw_regression_df) == "Falls..Y.N.")])
-y <- baseline_raw_regression_df$Falls..Y.N.
+baseline_raw_data_adjusted_regression$Falls..Y.N. <- as.numeric(baseline_raw_data_adjusted_regression$Falls..Y.N.)
+X <- as.matrix(baseline_raw_data_adjusted_regression[, -which(names(baseline_raw_data_adjusted_regression) == "Falls..Y.N.")])
+y <- baseline_raw_data_adjusted_regression$Falls..Y.N.
 lasso_model <- cv.glmnet(X, y, family = "binomial", alpha = 1)
 selected_features <- coef(lasso_model, s = "lambda.min")[-1, ]
 selected_features <- names(selected_features[selected_features != 0])
 print(selected_features)
 
 # Multivariate Regression with selected Features
-FeatureSelected_baseline_raw_regression_df = baseline_raw_regression_df[,c(selected_features, "Falls..Y.N.")]
+FeatureSelected_baseline_raw_regression_df = baseline_raw_data_adjusted_regression[,c(selected_features, "Falls..Y.N.")]
 FeatureSelected_baseline_raw_regression_df
 FeatureSelected_logit_model <- glm(Falls..Y.N. ~., data = FeatureSelected_baseline_raw_regression_df, family = binomial)
 FeatureSelected_predicted_probs <- predict(FeatureSelected_logit_model, newdata = FeatureSelected_baseline_raw_regression_df, type = "response")
@@ -331,6 +414,26 @@ ggplot(FeatureSelected_coef_df, aes(x = reorder(feature, coefficient), y = coeff
        y = "Feature") +
   theme_minimal()
 summary(FeatureSelected_logit_model)
+
+## FRQ predicting fall
+
+FRQ_df_baseline = baseline_NPH_df[-1, c(5, 10, 11, 12, 16, 18)]
+FRQ_df_baseline$`Falls (Y/N)`[FRQ_df_baseline$`Falls (Y/N)` == '999'] = NA
+FRQ_df_baseline$FRQ[FRQ_df_baseline$FRQ == '999'] = NA
+FRQ_df_baseline$BMI [FRQ_df_baseline$BMI == 997] = NA
+FRQ_df_baseline$`Race (1=white, 2=black, 3= asian, 4=other)`[FRQ_df_baseline$`Race (1=white, 2=black, 3= asian, 4=other)` == 998] = NA
+FRQ_df_baseline$Sex <- ifelse(FRQ_df_baseline$Sex == "Male", 0, 1)
+FRQ_df_baseline
+FRQ_df_baseline [, -6]= data.frame(scale(FRQ_df_baseline[,-6]))
+FRQ_df_baseline = na.omit(FRQ_df_baseline)
+FRQ_df_baseline$`Falls (Y/N)` = as.numeric(FRQ_df_baseline$`Falls (Y/N)`)
+
+logit_model <- glm(`Falls (Y/N)` ~., data = FRQ_df_baseline, family = binomial)
+predicted_probs <- predict(logit_model, newdata = FRQ_df_baseline, type = "response")
+roc_curve <- roc(FRQ_df_baseline$`Falls (Y/N)`, predicted_probs)
+plot(roc_curve, main = "ROC Curve", col = "blue", lwd = 2)
+auc_value <- auc(roc_curve)
+text(0.8, 0.2, paste("AUC =", round(auc_value, 2)), col = "black", cex = 1.5)
 
 
 # Pre vs Post Analysis
